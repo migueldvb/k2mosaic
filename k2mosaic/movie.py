@@ -8,6 +8,7 @@ import click
 
 from astropy import visualization
 import fitsio
+from astropy.wcs import WCS
 import imageio
 import numpy as np
 
@@ -23,6 +24,29 @@ class KeplerMosaicMovieFrame(object):
     def __init__(self, fits_filename):
         self.fits_filename = fits_filename
 
+    def flip_frame(self, image, wcs):
+        """Flips the image if the RA or DEC axes are inverted
+
+        Parameters
+        ----------
+        image : array
+            Frame to be shown in the output movie.
+
+        wcs : WCS
+            Object containing information about the WCS transformation and
+            distortion. The header keywords are copied from the available K2
+            FFI's.
+        """
+        ra_0, dec_0 = wcs.all_pix2world(0, 0, 0)
+        ra_1, dec_1 = wcs.all_pix2world(*(image.shape+(0,)))
+        if ra_0 < ra_1:
+            # Reverse the array in RA
+            image = image[:,::-1]
+        if dec_1 < dec_0:
+            # Reverse the array in DEC
+            image = image[::-1,:]
+        return image
+
     def to_fig(self, rowrange, colrange, extension=1, cmap='Greys_r', cut=None, dpi=50):
         """Turns a fits file into a cropped and contrast-stretched matplotlib figure."""
         fts = fitsio.FITS(self.fits_filename)
@@ -35,13 +59,16 @@ class KeplerMosaicMovieFrame(object):
         image_scaled = visualization.scale_image(image, scale="log",
                                                  min_cut=cut[0], max_cut=cut[1]) #min_percent=0.5, max_percent=99.5)
 
+            wcs = WCS(fts[extension].header)
+
         px_per_kepler_px = 20
         dimensions = [image.shape[0] * px_per_kepler_px, image.shape[1] * px_per_kepler_px]
         figsize = [dimensions[1]/dpi, dimensions[0]/dpi]
         dpi = 440 / float(figsize[0])
         fig = pl.figure(figsize=figsize, dpi=dpi)
         ax = fig.add_subplot(1, 1, 1, axisbg='green')
-        ax.matshow(image_scaled, aspect='auto',
+        ax.matshow(self.flip_frame(image_scaled, wcs),
+                   aspect='auto',
                    cmap=cmap, origin='lower',
                    interpolation='nearest')
         ax.set_xticks([])
